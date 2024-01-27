@@ -1,0 +1,4 @@
+server:
+  # if the port is 80 and ssl is enabled,
+  # it will automatically be changed to 443
+  port: 80

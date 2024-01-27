@@ -1,0 +1,5 @@
+# pycharm stuff
+.idea
+
+# python
+__pycache__
