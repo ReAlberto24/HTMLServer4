@@ -5,8 +5,9 @@ import general
 from colors import *
 
 # server framework
-from quart import Quart, websocket, send_file, copy_current_request_context, Response, request
+from quart import Quart, websocket, send_file, Response, request, abort
 import uvicorn
+from datetime import datetime
 
 # config
 import yaml
@@ -22,6 +23,9 @@ METHODS: list[str] = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH']
 PORT: general.DynamicValue = general.DynamicValue(int)
 HTML_DIRECTORY: general.DynamicValue = general.DynamicValue(str)
 SECRET_KEY: general.DynamicValue = general.DynamicValue(str)
+
+# still dynamic
+ERROR_CODE_HANDLERS: list = []
 
 # - basic server code
 # load config
@@ -60,14 +64,46 @@ async def http_index(file: str = 'index.html'):
             # Check if the file size is greater than 1MB
             if os.path.getsize(f) > 1000000:
                 return await send_file(f, conditional=True), 206
+            elif modified_client := request.headers.get('If-Modified-Since'):
+                client_time = datetime.strptime(modified_client, '%a, %d %b %Y %H:%M:%S %Z')
+                if client_time <= datetime.fromtimestamp(os.path.getmtime(f)):
+                    return '', 304
             return await send_file(f), 200
-    return '', 404
+    abort(404)
 
 
 @app.after_request
 def log_response(response: Response):
     general.log_request(raw_request=request, raw_response=response)
     return response
+
+
+print('Loading Error Handlers')
+for handler_file in os.listdir(JOIN(ROOT_DIR, 'error-handlers')):
+    handler_path = JOIN(ROOT_DIR, 'error-handlers', handler_file)
+
+    with open(handler_path, 'r') as f_handler:
+        handler_data = yaml.safe_load(f_handler)
+    del f_handler
+
+    error_code = handler_data.get('error-code')
+    redirect_to = handler_data.get('redirect-to')
+    return_value = handler_data.get('return')
+    return_code = handler_data.get('return-code')
+
+
+    def create_error_handler(_redirect_to, _return_value, _return_code):
+        def error_handler(err):
+            if _return_value is None:
+                return send_file(JOIN(HTML_DIRECTORY, _redirect_to))
+            return _return_value, _return_code
+
+        return error_handler
+
+
+    print(f'Adding error handler for: {FC.DARK_CYAN}{error_code}{OPS.RESET}')
+    ERROR_CODE_HANDLERS.append(error_code)
+    app.errorhandler(error_code)(create_error_handler(redirect_to, return_value, return_code))
 
 
 if __name__ == '__main__':
