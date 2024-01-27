@@ -1,5 +1,9 @@
 from typing import Any
 from collections.abc import MutableMapping
+import os
+from pathlib import Path
+from colors import *
+from quart import Request, Response
 
 
 # https://www.freecodecamp.org/news/how-to-flatten-a-dictionary-in-python-in-4-different-ways/
@@ -41,3 +45,50 @@ class DynamicValue:
         elif self.__raise_error:
             raise self.IncorrectType(type(new_value), self.__type)
         return self.__default
+
+
+def is_in_directory(root: str, path: str):
+    """Checks if a file/directory is a subdirectory of another"""
+    return os.path.abspath(path).startswith(os.path.abspath(root))
+
+
+def resolve_directory_path(directory_path: str):
+    """Resolves and sanitize the path"""
+    return str(Path(directory_path).resolve())
+
+
+def log_request(method: str = None,
+                endpoint: str = None,
+                return_code: int = None,
+                raw_request: Request = None,
+                raw_response: Response = None,
+                custom_color: str = None) -> None:
+    base_color = OPS.RESET
+
+    if raw_request is not None:
+        method = raw_request.method
+        endpoint = raw_request.full_path if len(raw_request.args) > 0 else raw_request.path
+        return_code = raw_response.status_code
+
+    ext_return_code = f' - {return_code}'
+    if return_code is None:
+        ext_return_code = ''
+        return_code = 0
+
+    if 100 <= return_code <= 199:
+        base_color = FC.WHITE
+    if 200 <= return_code <= 299:
+        base_color = FC.LIGHT_RED
+    if 300 <= return_code <= 399:
+        base_color = FC.LIGHT_MAGENTA
+    if 400 <= return_code <= 499:
+        base_color = FC.DARK_RED
+    if 500 <= return_code <= 599:
+        base_color = FC.DARK_CYAN
+
+    if custom_color is not None:
+        base_color = custom_color
+
+    print(f'{base_color} {method: <7} - {endpoint}{ext_return_code} {OPS.RESET}')
+
+

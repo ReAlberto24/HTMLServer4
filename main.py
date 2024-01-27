@@ -5,7 +5,7 @@ import general
 from colors import *
 
 # server framework
-from quart import Quart, websocket
+from quart import Quart, websocket, send_file, copy_current_request_context, Response, request
 import uvicorn
 
 # config
@@ -52,11 +52,25 @@ app.config['CORS_HEADERS'] = 'Content-Type'
 @app.route('/', methods=METHODS)
 @app.route('/<path:file>', methods=METHODS)
 async def http_index(file: str = 'index.html'):
-    return file, 200
+    f = general.resolve_directory_path(JOIN(HTML_DIRECTORY, *file.split('/')))
+    if general.is_in_directory(HTML_DIRECTORY, f):
+        if os.path.isdir(f) and os.path.exists(JOIN(f, 'index.html')):
+            return await send_file(JOIN(f, 'index.html')), 200
+        elif os.path.exists(f):
+            # Check if the file size is greater than 1MB
+            if os.path.getsize(f) > 1000000:
+                return await send_file(f, conditional=True), 206
+            return await send_file(f), 200
+    return '', 404
+
+
+@app.after_request
+def log_response(response: Response):
+    general.log_request(raw_request=request, raw_response=response)
+    return response
 
 
 if __name__ == '__main__':
-    print(HTML_DIRECTORY)
     uvicorn.run(
         app,
         host='0.0.0.0',
