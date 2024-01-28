@@ -33,6 +33,7 @@ class DynamicValue:
         self.__type = v_type
         self.__default = default
         self.__raise_error = raise_error
+        self.value = None
 
     class IncorrectType(Exception):
         def __init__(self, new_type: Any, _type: Any):
@@ -41,6 +42,7 @@ class DynamicValue:
     def check_type(self, new_value: Any) -> Any:
         if isinstance(new_value, self.__type):
             self.__type = type(new_value)
+            self.value = new_value
             return new_value
         elif self.__raise_error:
             raise self.IncorrectType(type(new_value), self.__type)
