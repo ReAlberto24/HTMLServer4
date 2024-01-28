@@ -18,6 +18,13 @@ import secrets
 import socket
 import http.client
 
+# plugins
+from plugin_loader import Loader
+import textwrap
+from hashlib import shake_128
+from functools import lru_cache
+import contextlib
+
 # - constants
 
 ROOT_DIR: str = os.path.dirname(os.path.abspath(__file__))
@@ -26,7 +33,12 @@ JOIN = os.path.join
 METHODS: list[str] = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH']
 # subject to change
 SERVER_NAME: str = 'PMgS'
+LOADER: Loader = Loader(
+                     plugin_directory=JOIN(ROOT_DIR, 'plugins'),
+                     raise_on_error=False
+                 )
 
+# dynamic
 PORT: general.DynamicValue = general.DynamicValue(int)
 HTML_DIRECTORY: general.DynamicValue = general.DynamicValue(str)
 SECRET_KEY: general.DynamicValue = general.DynamicValue(str)
@@ -84,6 +96,9 @@ app.config['CORS_HEADERS'] = 'Content-Type'
 @app.route('/', methods=METHODS)
 @app.route('/<path:file>', methods=METHODS)
 async def http_index(file: str = INDEX_FILE):
+    retrn = LOADER.call_id('server.request', request)
+    if retrn is not None:
+        return retrn
     f = general.resolve_directory_path(JOIN(HTML_DIRECTORY, *file.split('/')))
     if general.is_in_directory(HTML_DIRECTORY, f):
         if os.path.isdir(f) and os.path.exists(JOIN(f, INDEX_FILE)):
@@ -137,6 +152,107 @@ for handler_file in os.listdir(JOIN(ROOT_DIR, 'error-handlers')):
     app.errorhandler(error_code)(create_error_handler(redirect_to, return_value, return_code))
 
 
+print('Loading plugins')
+LOADER.load_plugins()
+LOADER.init_plugins()
+LOADER.load_managers()
+
+LOADER.call_id('plugin.pre-load')
+
+all_endpoints = [endpoint for plugin in LOADER.plugins for endpoint in plugin.manager._endpoints]
+longest_endpoint = len(max(all_endpoints, key=len)) if all_endpoints else 0
+
+for plugin in LOADER.plugins:
+    print(f'{FC.LIGHT_MAGENTA}{plugin.configuration.id_}{OPS.RESET} events: ' +
+          ', '.join([f'{FC.DARK_YELLOW}{i}{OPS.RESET}' for i in plugin.manager._functions.keys()]))
+
+    # hackery
+    with contextlib.redirect_stdout(plugin.stdout_buffer):
+        plugin.manager._functions.get('plugin.loading.endpoints', lambda: None)()
+
+    for endpoint in plugin.manager._endpoints:
+        def create_plugin():
+            plugin_id = 'f' + shake_128(plugin.configuration.id_.encode()).hexdigest(8)
+            function_identifier = secrets.token_hex(4)
+            name = f'{plugin_id}_c{function_identifier}'
+            lcls = {}
+            glbls = {
+                'LOADER': LOADER,
+                'request': request,
+                'plugin_': plugin,
+                'ERROR_CODE_HANDLERS': ERROR_CODE_HANDLERS,
+                'abort': abort,
+                'FC': FC,
+                'OPS': OPS,
+            }
+            exec(textwrap.dedent(f'''
+                async def {name}(*_args, **_kwargs):
+                    retrn = LOADER.call_id('server.request', request)
+                    if retrn is not None: return retrn
+                    try:
+                        data, _return_code = plugin_.manager.call_endpoint(
+                            endpoint='{endpoint}', *_args, **_kwargs, request=request
+                        )
+                    except (ValueError, TypeError):
+                        raise ValueError("Endpoint \\"{endpoint}\\" in {plugin.configuration.id_}"
+                                         " doesn't return 2 values")
+                    if _return_code in ERROR_CODE_HANDLERS: abort(_return_code)
+                    return data, _return_code
+                '''), glbls, lcls)
+            return lcls[name]
+        new_function = create_plugin()
+        doc = plugin.manager._endpoints[endpoint]['func'].__doc__
+        doc = doc if doc is not None else 'No docs included'
+        doc = doc.replace('\n', '\n         ')
+        print(f'Adding endpoint       : {FC.DARK_YELLOW}{endpoint: <{longest_endpoint + 3}}{OPS.RESET} | '
+              f'{plugin.configuration.id_} | {new_function.__name__}\n - docs: {doc}')
+        app.route(endpoint, methods=METHODS)(new_function)
+
+    # again
+    with contextlib.redirect_stdout(plugin.stdout_buffer):
+        plugin.manager._functions.get('plugin.loading.sockets', lambda: None)()
+
+    for endpoint in plugin.manager._sockets:
+        def create_plugin():
+            plugin_id = 'f' + shake_128(plugin.configuration.id_.encode()).hexdigest(8)
+            function_identifier = secrets.token_hex(4)
+            name = f'{plugin_id}_s{function_identifier}'
+            lcls = {}
+            glbls = {
+                'LOADER': LOADER,
+                'request': request,
+                'plugin_': plugin,
+                'ERROR_CODE_HANDLERS': ERROR_CODE_HANDLERS,
+                'abort': abort,
+                'FC': FC,
+                'OPS': OPS,
+                'websocket': websocket,
+                'log_request': general.log_request,
+            }
+            exec(textwrap.dedent(f'''
+                async def {name}(*_args, **_kwargs):
+                    await LOADER.call_id('server.socket', websocket)
+                    log_request(method='SOCKET',
+                                endpoint=websocket.full_path if len(websocket.args) > 0 else websocket.path,
+                                return_code=None,
+                                custom_color=FC.DARK_GREEN)
+                    await plugin_.manager.socket(endpoint='{endpoint}', *_args, **_kwargs, ws=websocket)
+                '''), glbls, lcls)
+            return lcls[name]
+
+
+        new_function = create_plugin()
+        doc = plugin.manager._sockets[endpoint].__doc__
+        doc = doc if doc is not None else 'No docs included'
+        doc = doc.replace('\n', '\n         ')
+        print(f'Adding socket endpoint: {FC.DARK_YELLOW}{endpoint: <{longest_endpoint + 3}}{OPS.RESET} | '
+              f'{plugin.configuration.id_} | {new_function.__name__}\n - {doc}')
+        app.websocket(endpoint)(new_function)
+
+
+LOADER.call_id('plugin.loaded')
+
+
 if __name__ == '__main__':
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
         s.connect(('8.8.8.8', 80))
@@ -155,6 +271,9 @@ if __name__ == '__main__':
     print(f'Connect to the server using this links:\n'
           f'  {FC.LIGHT_BLUE}Local Machine{OPS.RESET}: {protocol}://127.0.0.1{link_port}/\n'
           f'  {FC.LIGHT_BLUE}Local Network{OPS.RESET}: {protocol}://{nat_addr}{link_port}/')
+
+    LOADER.call_id('server.start')
+
     uvicorn.run(
         app,
         host='0.0.0.0',
@@ -166,5 +285,7 @@ if __name__ == '__main__':
         ssl_keyfile=SSL_KEY_FILE,
         ssl_keyfile_password=SSL_KEY_PASSWORD
     )
+
+    LOADER.call_id('server.end')
 
     print('Closing WebServer')
