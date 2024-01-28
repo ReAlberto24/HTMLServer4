@@ -1,11 +1,11 @@
-# HTMLServer 4
+# PMgS
 <sup><sup>(HTMLServer4-maritozzo)</sup></sup>
 
 ---
 
-HTMLServer4 is an ASGI web server, 
+PMgS is an ASGI web server, 
 based on the Quart framework and the Uvicorn ASGI server.
 
 ---
 ### Version
-alpha-0.0.1
+alpha-0.1

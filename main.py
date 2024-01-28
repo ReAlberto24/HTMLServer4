@@ -20,10 +20,12 @@ import http.client
 
 # - constants
 
-ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
-CWD = os.getcwd()
+ROOT_DIR: str = os.path.dirname(os.path.abspath(__file__))
+CWD: str = os.getcwd()
 JOIN = os.path.join
 METHODS: list[str] = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH']
+# subject to change
+SERVER_NAME: str = 'PMgS'
 
 PORT: general.DynamicValue = general.DynamicValue(int)
 HTML_DIRECTORY: general.DynamicValue = general.DynamicValue(str)
@@ -99,8 +101,9 @@ async def http_index(file: str = INDEX_FILE):
 
 
 @app.after_request
-def log_response(response: Response):
+def server_after_request(response: Response):
     general.log_request(raw_request=request, raw_response=response)
+    response.headers['Server'] = SERVER_NAME
     return response
 
 
@@ -156,6 +159,7 @@ if __name__ == '__main__':
         app,
         host='0.0.0.0',
         port=PORT,
+        server_header=False,
         # disable server builtin logging
         access_log=False, log_level=50,
         ssl_certfile=SSL_CERT_FILE,
