@@ -96,10 +96,12 @@ async def http_index(file: str = INDEX_FILE):
     retrn = LOADER.call_id('server.request', request)
     if retrn is not None:
         return retrn
+    del retrn
     f = general.resolve_directory_path(JOIN(HTML_DIRECTORY, *file.split('/')))
     if general.is_in_directory(HTML_DIRECTORY, f):
         if os.path.isdir(f) and os.path.exists(JOIN(f, INDEX_FILE)):
-            return await send_file(JOIN(f, INDEX_FILE)), 200
+            with open(JOIN(f, INDEX_FILE), 'r') as file:
+                return LOADER.run('parse_pmgs_template', file=file.read()), 200
         elif os.path.exists(f):
             # Check if the file size is greater than 1MB
             if os.path.getsize(f) > 1000000:
@@ -108,7 +110,12 @@ async def http_index(file: str = INDEX_FILE):
                 client_time = datetime.strptime(modified_client, '%a, %d %b %Y %H:%M:%S %Z')
                 if client_time <= datetime.fromtimestamp(os.path.getmtime(f)):
                     return '', 304
-            return await send_file(f), 200
+            retrn = LOADER.call_id('server.request._cgi', f)
+            if retrn is not None:
+                return retrn
+            del retrn
+            with open(f, 'r') as file:
+                return LOADER.run('parse_pmgs_template', file=file.read()), 200
     abort(404)
 
 
@@ -256,7 +263,6 @@ for plugin in LOADER.plugins:
 
 
 LOADER.call_id('plugin.loaded')
-
 
 if __name__ == '__main__':
     nat_addr = LOADER.run('get_local_ip')
