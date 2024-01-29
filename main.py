@@ -14,9 +14,6 @@ import yaml
 import secrets
 
 # verbose
-# Gets Nat and Public addresses
-import socket
-import http.client
 
 # plugins
 from plugin_loader import Loader
@@ -168,7 +165,7 @@ for plugin in LOADER.plugins:
 
     # hackery
     with contextlib.redirect_stdout(plugin.stdout_buffer):
-        plugin.manager._functions.get('plugin.loading.endpoints', lambda: None)()
+        plugin.manager._functions.get('plugin.loading.pre-endpoints', lambda: None)()
 
     for endpoint in plugin.manager._endpoints:
         def create_plugin():
@@ -210,7 +207,11 @@ for plugin in LOADER.plugins:
 
     # again
     with contextlib.redirect_stdout(plugin.stdout_buffer):
-        plugin.manager._functions.get('plugin.loading.sockets', lambda: None)()
+        plugin.manager._functions.get('plugin.loading.post-endpoints', lambda: None)()
+
+    # and again
+    with contextlib.redirect_stdout(plugin.stdout_buffer):
+        plugin.manager._functions.get('plugin.loading.pre-sockets', lambda: None)()
 
     for endpoint in plugin.manager._sockets:
         def create_plugin():
@@ -249,20 +250,16 @@ for plugin in LOADER.plugins:
               f'{plugin.configuration.id_} | {new_function.__name__}\n - {doc}')
         app.websocket(endpoint)(new_function)
 
+    # just do it
+    with contextlib.redirect_stdout(plugin.stdout_buffer):
+        plugin.manager._functions.get('plugin.loading.post-sockets', lambda: None)()
+
 
 LOADER.call_id('plugin.loaded')
 
 
 if __name__ == '__main__':
-    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
-        s.connect(('8.8.8.8', 80))
-        nat_addr = s.getsockname()[0]
-    del s
-
-    conn = http.client.HTTPSConnection('ipv4.icanhazip.com')
-    conn.request('GET', '/')
-    public_addr = conn.getresponse().read().decode('utf-8').strip()
-    del conn
+    nat_addr = LOADER.run('get_local_ip')
 
     protocol = 'http' if PORT != 443 else 'https'
     link_port = f':{PORT}' if PORT not in (80, 443) else ''

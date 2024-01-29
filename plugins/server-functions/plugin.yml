@@ -1,0 +1,9 @@
+plugin:
+  name: 'functions'
+  version: 1
+  main-file: 'main.py'
+  id: 'html_server4.functions'
+
+loader:
+  required-version: 1.0
+  preferred-version: 1.0
