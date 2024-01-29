@@ -2,6 +2,8 @@ import asyncio
 from functools import wraps, partial
 import functools
 import warnings
+import inspect
+from typing import Callable
 
 warnings.simplefilter('once', DeprecationWarning)
 
@@ -73,6 +75,7 @@ class Manager:
         self._functions = {}
         self._endpoints = {}
         self._sockets = {}
+        self._exposed = {}
 
     @staticmethod
     def sync_wrapper(func):
@@ -93,6 +96,9 @@ class Manager:
             #     self._sockets[endpoint] = self.sync_wrapper(func)
             if not asyncio.iscoroutinefunction(func):
                 raise SyntaxError(f'Function "{func.__name__}" is not async')
+            if endpoint in self._sockets:
+                raise SyntaxError(f'Endpoint "{endpoint}" is already linked to a function '
+                                  f'({self._sockets[endpoint].__name__})')
             self._sockets[endpoint] = func
 
             def wrapper(*args, **kwargs):
@@ -104,6 +110,9 @@ class Manager:
                     enable_cross_origin: bool = False,
                     enable_lru_cache: bool = False):
         def decorator(func):
+            if endpoint in self._endpoints:
+                raise SyntaxError(f'Endpoint "{endpoint}" is already linked to a function '
+                                  f'({self._endpoints[endpoint].__name__})')
             self._endpoints[endpoint] = {
                 'func': func,
                 'cross-origin': enable_cross_origin,
@@ -117,7 +126,26 @@ class Manager:
 
     def on(self, event: str):
         def decorator(func):
+            if event in self._functions:
+                raise SyntaxError(f'Event "{event}" is already linked to a function '
+                                  f'({self._functions[event].__name__})')
             self._functions[event] = func
+
+            def wrapper(*args, **kwargs):
+                return func(*args, **kwargs)
+            return wrapper
+        return decorator
+
+    def expose(self, override: bool | Callable = False):
+        if inspect.isfunction(override):
+            self._exposed[override.__name__] = (override, False)
+
+            def wrapper(*args, **kwargs):
+                return override(*args, **kwargs)
+            return wrapper
+
+        def decorator(func):
+            self._exposed[func.__name__] = (func, override)
 
             def wrapper(*args, **kwargs):
                 return func(*args, **kwargs)
@@ -147,6 +175,8 @@ class Manager:
             DeprecationWarning
         )
         return self.route(endpoint=endpoint, enable_cross_origin=enable_cross_origin, enable_lru_cache=enable_lru_cache)
+
+    # -
 
     def call_id(self, id_: str, *args, **kwargs):
         if self._functions.get(id_) is not None:

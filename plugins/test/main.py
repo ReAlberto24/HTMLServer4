@@ -9,14 +9,24 @@ def on_pre_load():
     print('Plugin Loading')
 
 
-@manager.on('plugin.loading.endpoints')
+@manager.on('plugin.loading.pre-endpoints')
 def on_loading_endpoints():
-    print('Working to load endpoints')
+    print('Loading endpoints')
 
 
-@manager.on('plugin.loading.sockets')
+@manager.on('plugin.loading.post-endpoints')
+def on_loading_endpoints():
+    print('Endpoints loaded')
+
+
+@manager.on('plugin.loading.pre-sockets')
 def on_loading_endpoints():
     print('Also sockets!!')
+
+
+@manager.on('plugin.loading.post-sockets')
+def on_loading_endpoints():
+    print('Sockets are here!')
 
 
 @manager.on('plugin.loaded')

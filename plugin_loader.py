@@ -133,6 +133,7 @@ class Loader:
         self.plugins: list[Plugin] = []
         self.plugin_loaded = LoaderState.base
         self.roe = raise_on_error
+        self.exposed = {}
 
     def load_plugins(self):
         for plugin in os.listdir(self.directory):
@@ -196,6 +197,14 @@ class Loader:
             #       plugin.manager._call_id('on-manager-load')
         self.plugin_loaded = LoaderState.loaded_managers
 
+        # new expose method
+        for plugin in self.plugins:
+            for name, (func, overrideable) in plugin.manager._exposed.items():
+                if name in self.exposed and not overrideable:
+                    raise SyntaxError(
+                        f'Function "{name}" is already present, enable override ({plugin.configuration.name})')
+                self.exposed[name] = func
+
     def call_id(self, id_, *args, **kwargs):
         if self.plugin_loaded < LoaderState.loaded_managers:
             if self.roe:
@@ -213,28 +222,11 @@ class Loader:
                 #     pass
                 continue
 
-    def check_endpoint(self, endpoint) -> bool:
+    def run(self, function, *args, **kwargs) -> (str, int):
         if self.plugin_loaded < LoaderState.loaded_managers:
             if self.roe:
                 raise PluginError('Loader', f'Use .init_plugins() before')
             print(str(PluginError('Loader', f'Use .init_plugins() before')))
             return
-        for plugin in self.plugins:
-            if endpoint in plugin.manager._endpoints:
-                return True
-        return False
+        return self.exposed[function](*args, **kwargs)
 
-    def call_endpoint(self, endpoint, *args, **kwargs) -> (str, int):
-        if self.plugin_loaded < LoaderState.loaded_managers:
-            if self.roe:
-                raise PluginError('Loader', f'Use .init_plugins() before')
-            print(str(PluginError('Loader', f'Use .init_plugins() before')))
-            return
-        for plugin in self.plugins:
-            try:
-                with contextlib.redirect_stdout(plugin.stdout_buffer):
-                    return plugin.manager.call_endpoint(endpoint, *args, **kwargs)
-            except ManagerError:
-                # if e._type == 'FunctionNotFound':
-                #     pass
-                continue
