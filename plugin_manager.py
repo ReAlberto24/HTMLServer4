@@ -71,6 +71,8 @@ class ExclusiveReturn(WrapperException):
 
 
 class Manager:
+    SERVER_INFORMATION: dict = {}
+
     def __init__(self):
         self._functions = {}
         self._endpoints = {}
@@ -136,7 +138,7 @@ class Manager:
             return wrapper
         return decorator
 
-    def expose(self, override: bool | Callable = False):
+    def expose(self, override: bool | Callable = False, name: str = None):
         if inspect.isfunction(override):
             self._exposed[override.__name__] = (override, False)
 
@@ -145,7 +147,10 @@ class Manager:
             return wrapper
 
         def decorator(func):
-            self._exposed[func.__name__] = (func, override)
+            if name is None:
+                self._exposed[name] = (func, override)
+            else:
+                self._exposed[func.__name__] = (func, override)
 
             def wrapper(*args, **kwargs):
                 return func(*args, **kwargs)

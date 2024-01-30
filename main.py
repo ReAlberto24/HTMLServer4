@@ -110,7 +110,7 @@ async def http_index(file: str = INDEX_FILE):
                 client_time = datetime.strptime(modified_client, '%a, %d %b %Y %H:%M:%S %Z')
                 if client_time <= datetime.fromtimestamp(os.path.getmtime(f)):
                     return '', 304
-            retrn = LOADER.call_id('server.request._cgi', f)
+            retrn = LOADER.call_id('server.request._cgi', file, f, request)
             if retrn is not None:
                 return retrn
             del retrn
@@ -160,6 +160,15 @@ print('Loading plugins')
 LOADER.load_plugins()
 LOADER.init_plugins()
 LOADER.load_managers()
+
+#  please don't use this call
+LOADER.call_id('plugin._attr')
+
+for plugin in LOADER.plugins:
+    plugin.manager.SERVER_INFORMATION = {
+        'PORT': PORT,
+        'HTML_DIRECTORY': HTML_DIRECTORY
+    }
 
 LOADER.call_id('plugin.pre-load')
 
