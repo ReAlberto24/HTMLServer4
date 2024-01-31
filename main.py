@@ -115,10 +115,10 @@ async def http_index(file: str = INDEX_FILE):
             # Check if the file size is greater than 1MB
             if os.path.getsize(f) > 1000000:
                 return await send_file(f, conditional=True), 206
-            # elif modified_client := request.headers.get('If-Modified-Since'):
-            #     client_time = datetime.strptime(modified_client, '%a, %d %b %Y %H:%M:%S %Z')
-            #     if client_time <= datetime.fromtimestamp(os.path.getmtime(f)):
-            #         return '', 304
+            elif modified_client := request.headers.get('If-Modified-Since'):
+                client_time = datetime.strptime(modified_client, '%a, %d %b %Y %H:%M:%S %Z')
+                if client_time <= datetime.fromtimestamp(os.path.getmtime(f)):
+                    return '', 304
             retrn = LOADER.call_id('server.request._cgi', file, f, request)
             if retrn is not None:
                 return retrn
