@@ -52,6 +52,7 @@ SSL_KEY_PASSWORD: str = None
 # - basic server code
 # load config
 
+print(f'Loading {FC.LIGHT_GREEN}config.yml{OPS.RESET}')
 with open(JOIN(ROOT_DIR, 'config.yml'), 'r') as conf_file:
     config: dict = yaml.safe_load(conf_file)
     config: dict = general.flatten_dict(config)
@@ -65,14 +66,21 @@ HTML_DIRECTORY: str = os.path.abspath(general.replace_variables(HTML_DIRECTORY,
 INDEX_FILE: str = INDEX_FILE.check_type(config.get('server.index-file'))
 SSL_ENABLED: bool = SSL_ENABLED.check_type(config.get('server.ssl.enabled'))
 if SSL_ENABLED:
+    print('Loading SSL')
     SSL_CERT_FILE: str = general.DynamicValue(str).check_type(config.get('server.ssl.cert'))
     SSL_CERT_FILE: str = os.path.abspath(general.replace_variables(SSL_CERT_FILE,
                                                                    {'$(ROOT)': ROOT_DIR,
                                                                     '$(CWD)': CWD}))
+    if not os.path.exists(SSL_CERT_FILE):
+        print('SSL Certificate file could not be found')
+        exit(1)
     SSL_KEY_FILE: str = general.DynamicValue(str).check_type(config.get('server.ssl.key'))
     SSL_KEY_FILE: str = os.path.abspath(general.replace_variables(SSL_KEY_FILE,
                                                                   {'$(ROOT)': ROOT_DIR,
                                                                    '$(CWD)': CWD}))
+    if not os.path.exists(SSL_KEY_FILE):
+        print('SSL Key file could not be found')
+        exit(1)
     SSL_KEY_PASSWORD: str = general.DynamicValue(str).check_type(config.get('server.ssl.key-password'))
     if PORT == 80:
         PORT = 443
@@ -100,22 +108,24 @@ async def http_index(file: str = INDEX_FILE):
     f = general.resolve_directory_path(JOIN(HTML_DIRECTORY, *file.split('/')))
     if general.is_in_directory(HTML_DIRECTORY, f):
         if os.path.isdir(f) and os.path.exists(JOIN(f, INDEX_FILE)):
-            with open(JOIN(f, INDEX_FILE), 'r') as file:
-                return LOADER.run('parse_pmgs_template', file=file.read()), 200
+            # with open(JOIN(f, INDEX_FILE), 'r') as file:
+            #     return LOADER.run('parse_pmgs_template', file=file.read()), 200
+            return await send_file(f), 200
         elif os.path.exists(f):
             # Check if the file size is greater than 1MB
             if os.path.getsize(f) > 1000000:
                 return await send_file(f, conditional=True), 206
-            elif modified_client := request.headers.get('If-Modified-Since'):
-                client_time = datetime.strptime(modified_client, '%a, %d %b %Y %H:%M:%S %Z')
-                if client_time <= datetime.fromtimestamp(os.path.getmtime(f)):
-                    return '', 304
+            # elif modified_client := request.headers.get('If-Modified-Since'):
+            #     client_time = datetime.strptime(modified_client, '%a, %d %b %Y %H:%M:%S %Z')
+            #     if client_time <= datetime.fromtimestamp(os.path.getmtime(f)):
+            #         return '', 304
             retrn = LOADER.call_id('server.request._cgi', file, f, request)
             if retrn is not None:
                 return retrn
             del retrn
-            with open(f, 'r') as file:
-                return LOADER.run('parse_pmgs_template', file=file.read()), 200
+            # with open(f, 'r') as file:
+            #     return LOADER.run('parse_pmgs_template', file=file.read()), 200
+            return await send_file(f), 200
     abort(404)
 
 
@@ -275,6 +285,13 @@ LOADER.call_id('plugin.loaded')
 
 if __name__ == '__main__':
     nat_addr = LOADER.run('get_local_ip')
+    public_addr = LOADER.run('get_public_ip')
+
+    print('Checking Public IP connection')
+    if public_addr_reachable := LOADER.run('check_public_ip', public_addr, PORT):
+        print(f'{FC.LIGHT_GREEN}Public IP is reachable{OPS.RESET}')
+    else:
+        print(f'{FC.LIGHT_RED}Public IP is not reachable{OPS.RESET}')
 
     protocol = 'http' if PORT != 443 else 'https'
     link_port = f':{PORT}' if PORT not in (80, 443) else ''
@@ -283,21 +300,28 @@ if __name__ == '__main__':
     print(f'Connect to the server using this links:\n'
           f'  {FC.LIGHT_BLUE}Local Machine{OPS.RESET}: {protocol}://127.0.0.1{link_port}/\n'
           f'  {FC.LIGHT_BLUE}Local Network{OPS.RESET}: {protocol}://{nat_addr}{link_port}/')
+    if public_addr_reachable:
+        print(f'  {FC.LIGHT_BLUE}Public{OPS.RESET}       : {protocol}://{public_addr}{link_port}/')
 
     LOADER.call_id('server.start')
 
-    uvicorn.run(
-        app,
-        host='0.0.0.0',
-        port=PORT,
-        server_header=False,
-        # disable server builtin logging
-        access_log=False, log_level=50,
-        ssl_certfile=SSL_CERT_FILE,
-        ssl_keyfile=SSL_KEY_FILE,
-        ssl_keyfile_password=SSL_KEY_PASSWORD
-    )
+    try:
+        uvicorn.run(
+            app,
+            host='0.0.0.0',
+            port=PORT,
+            server_header=False,
+            # disable server builtin logging
+            access_log=False, log_level=50,
+            ssl_certfile=SSL_CERT_FILE,
+            ssl_keyfile=SSL_KEY_FILE,
+            ssl_keyfile_password=SSL_KEY_PASSWORD
+        )
 
-    LOADER.call_id('server.end')
+        LOADER.call_id('server.end')
+    except FileNotFoundError:
+        if SSL_ENABLED:
+            print('SSL is enabled but the files could not be found')
+            LOADER.call_id('server.error.ssl')
 
     print('Closing WebServer')

@@ -8,4 +8,4 @@ based on the Quart framework and the Uvicorn ASGI server.
 
 ---
 ### Version
-alpha-0.1
+alpha-0.3

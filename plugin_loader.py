@@ -2,7 +2,7 @@ import os
 from dataclasses import dataclass
 from types import ModuleType
 from typing import Any
-from server_funcs import flatten_dict
+from general import flatten_dict
 from yaml import safe_load
 import io
 import sys
@@ -227,6 +227,11 @@ class Loader:
             if self.roe:
                 raise PluginError('Loader', f'Use .init_plugins() before')
             print(str(PluginError('Loader', f'Use .init_plugins() before')))
+            return
+        if function not in self.exposed:
+            if self.roe:
+                raise PluginError('FunctionNotFound', f'The specified function "{function}" could not be found')
+            print(str(PluginError('FunctionNotFound', f'The specified function "{function}" could not be found')))
             return
         return self.exposed[function](*args, **kwargs)
 
