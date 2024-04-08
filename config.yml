@@ -16,7 +16,7 @@ server:
   html-directory: '$(ROOT)/html'
 
   ssl:
-    enabled: true
+    enabled: false
     cert: '$(ROOT)/ssl/cert.pem'
     key: '$(ROOT)/ssl/key.pem'
     key-password: 'HTMLServer4'
