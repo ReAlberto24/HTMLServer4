@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport"
+          content="width=device-width, user-scalable=no, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="ie=edge">
+    <title>Hello, World!</title>
+</head>
+
+<script>
+    addEventListener('DOMContentLoaded', ev => {
+        let st = Date.now()
+        fetch('/')
+            .then(data => {
+                et = Date.now()
+                document.querySelector('p#ping').innerText = `testing ping: ${et - st}ms`
+            })
+            .catch(error => console.error(error))
+            .finally()
+
+        document.querySelector('p#secure').innerText = `connection secure: ${location.protocol === 'https:'}`
+    })
+</script>
+
+<body>
+    <p id="secure">connection secure: ...</p>
+    <p id="ping">testing ping: ...</p>
+</body>
+</html>

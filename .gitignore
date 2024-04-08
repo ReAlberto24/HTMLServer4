@@ -1,0 +1,13 @@
+# pycharm stuff
+.idea
+
+# python
+__pycache__
+
+# php
+php
+
+# beta stuff
+z
+test.py
+ssl
