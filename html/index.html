@@ -10,21 +10,71 @@
 
 <script>
     addEventListener('DOMContentLoaded', ev => {
-        let st = Date.now()
-        fetch('/')
-            .then(data => {
-                et = Date.now()
-                document.querySelector('p#ping').innerText = `testing ping: ${et - st}ms`
-            })
-            .catch(error => console.error(error))
-            .finally()
+            let st = Date.now();
+            fetch('/')
+                .then(data => {
+                    let et = Date.now();
+                    document.querySelector('p#ping').innerText = `testing ping: ${et - st}ms`;
+                })
+                .catch(error => console.error(error)).finally()
 
-        document.querySelector('p#secure').innerText = `connection secure: ${location.protocol === 'https:'}`
-    })
+            document.querySelector('p#secure').innerText = `connection secure: ${location.protocol === 'https:'}`
+            try {
+                document.querySelector('p#protocol').innerText = `HTTP protocol: ${performance.getEntriesByType('navigation')[0].nextHopProtocol}`
+            } catch (e) {
+                document.querySelector('p#protocol').innerText = `HTTP protocol: ${location.protocol.replace(':', '')}`
+            }
+
+            fetch('/thispagedoesntexist')
+                .then(response => {
+                    document.querySelector('p#not-found').innerText = `404 page test: ${response.status === 404 ? 'ok' : 'error'}`
+                })
+                .catch(error => console.error(error)).finally()
+
+            if ('WebSocket' in window) {
+                let ws = new WebSocket(`ws${location.protocol === 'https:' ? 's' : ''}://${location.host}/echo`);
+                ws.onopen = () => {
+                    ws.send('Ping');
+                    document.querySelector('p#websocket').innerText = 'websocket test: connected';
+                }
+                ws.onmessage = evt => {
+                    let received_msg = evt.data;
+                    if (received_msg === 'Ping')
+                        document.querySelector('p#websocket').innerText = 'websocket test: ok';
+                    ws.close();
+                }
+                ws.onerror = err => {
+                    document.querySelector('p#websocket').innerText = 'websocket test: error'
+                    console.error('WebSocket error observed: ', err)
+                }
+            } else {
+                document.querySelector('p#websocket').innerText = 'websocket test: no browser support';
+            }
+
+            if (location.protocol === 'https:')
+                fetch(`http://${location.host}/`, {redirect: 'follow'})
+                    .then(response => {
+                        if (!response.ok)
+                            return
+                        if (response.redirected)
+                            document.querySelector('p#scheme-update').innerText = 'scheme updates if secure: yes';
+                        else throw 'no'
+                    })
+                    .catch(err => {
+                        document.querySelector('p#scheme-update').innerText = 'scheme updates if secure: no';
+                        console.error(err)
+                    }).finally()
+            else
+                document.querySelector('p#scheme-update').innerText = 'scheme updates if secure: insecure-base-request';
+        })
 </script>
 
 <body>
     <p id="secure">connection secure: ...</p>
     <p id="ping">testing ping: ...</p>
+    <p id="not-found">404 page test: ...</p>
+    <p id="protocol">HTTP protocol: ...</p>
+    <p id="websocket">websocket test: ...</p>
+    <p id="scheme-update">scheme updates if secure: ...</p>
 </body>
 </html>

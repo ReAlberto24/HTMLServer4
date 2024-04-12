@@ -18,7 +18,7 @@ class Importer:
         """
         Add a variable to the globals of the module before loading,
 
-        <b>possibly unsafe</b>
+        **possibly unsafe!**
         :param attr:
         :return:
         """

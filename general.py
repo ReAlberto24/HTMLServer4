@@ -99,7 +99,7 @@ class ServerInformation:
         for k, v in data.items():
             setattr(self, k, v)
 
-    def get(self, item, default: None):
+    def get(self, item, default: Any = None):
         try:
             return getattr(self, item)
         except (AttributeError, Exception):

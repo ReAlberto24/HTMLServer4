@@ -10,7 +10,7 @@ def on_load():
 
 
 @manager.route('/x')
-def x(request: Request) -> tuple[str, int]:
+async def x(request: Request) -> tuple[str, int]:
     return 'X', 200
 
 

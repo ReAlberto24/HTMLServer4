@@ -3,7 +3,7 @@ from functools import wraps, partial
 import functools
 import warnings
 import inspect
-from typing import Callable
+from typing import Callable, Any
 
 import general
 
@@ -81,14 +81,23 @@ class Manager:
         self._sockets = {}
         self._exposed = {}
 
+    # @staticmethod
+    # def sync_wrapper(func):
+    #     @wraps(func)
+    #     async def run(*args, **kwargs):
+    #         loop = asyncio.get_event_loop()
+    #         partial_func = partial(func, *args, **kwargs)
+    #         return await loop.run_in_executor(None, partial_func)
+    #     return run
     @staticmethod
-    def sync_wrapper(func):
-        @wraps(func)
-        async def run(*args, **kwargs):
-            loop = asyncio.get_event_loop()
-            partial_func = partial(func, *args, **kwargs)
-            return await loop.run_in_executor(None, partial_func)
+    def sync_wrapper(func: Callable):
+        async def run(*args, **kwargs) -> Any:
+            value = func(*args, **kwargs)
+            if asyncio.iscoroutine(value):
+                return await value
+            return value
         return run
+
 
     def websocket(self, endpoint: str):
         def decorator(func):
@@ -105,14 +114,12 @@ class Manager:
                                   f'({self._sockets[endpoint].__name__})')
             self._sockets[endpoint] = func
 
-            def wrapper(*args, **kwargs):
-                return func(*args, **kwargs)
-            return wrapper
+            return func
         return decorator
 
     def route(self, endpoint: str, ):
-                    # enable_cross_origin: bool = False,
-                    # enable_lru_cache: bool = False):
+              # enable_cross_origin: bool = False,
+              # enable_lru_cache: bool = False):
         def decorator(func):
             if endpoint in self._endpoints:
                 raise SyntaxError(f'Endpoint "{endpoint}" is already linked to a function '
@@ -123,9 +130,7 @@ class Manager:
                 'lru-cache': False,  # enable_lru_cache
             }
 
-            def wrapper(*args, **kwargs) -> (..., int):
-                return func(*args, **kwargs)
-            return wrapper
+            return func
         return decorator
 
     def on(self, event: str):
@@ -135,9 +140,7 @@ class Manager:
                                   f'({self._functions[event].__name__})')
             self._functions[event] = func
 
-            def wrapper(*args, **kwargs):
-                return func(*args, **kwargs)
-            return wrapper
+            return func
         return decorator
 
     def expose(self, override: bool | Callable = False, name: str = None):
@@ -181,7 +184,7 @@ class Manager:
             f'Call to deprecated function "endpoint", use "route" instead',
             DeprecationWarning
         )
-        return self.route(endpoint=endpoint, enable_cross_origin=enable_cross_origin, enable_lru_cache=enable_lru_cache)
+        return self.route(endpoint=endpoint)  # , enable_cross_origin=enable_cross_origin, enable_lru_cache=enable_lru_cache)
 
     # -
 
@@ -202,3 +205,22 @@ class Manager:
             return self._sockets[endpoint](*args, **kwargs)
         else:
             raise FunctionNotFound('Cannot find the requested endpoint')
+
+    @property
+    def functions(self):
+        return self._functions
+
+    @property
+    def endpoints(self):
+        return self._endpoints
+
+    @property
+    def sockets(self):
+        return self._sockets
+
+
+class ManagerV2(Manager):
+    def __init__(self):
+        super().__init__()
+
+

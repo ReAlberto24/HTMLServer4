@@ -22,10 +22,10 @@ import secrets
 # verbose
 
 # plugins
-from plugin_loader import Loader
+from plugin_loader.v1 import Loader
 import textwrap
 from hashlib import shake_128
-from functools import lru_cache
+# from functools import lru_cache
 import contextlib
 
 # - constants
@@ -36,6 +36,7 @@ JOIN = os.path.join
 METHODS: list[str] = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH']
 # subject to change
 SERVER_NAME: str = 'PMgS'
+VERSION: str = 'alpha-2.0'
 LOADER: Loader = Loader(
                      plugin_directory=JOIN(ROOT_DIR, 'plugins'),
                      raise_on_error=False
@@ -50,12 +51,14 @@ SERVER: general.DynamicValue = general.DynamicValue(str)
 SSL_ENABLED: general.DynamicValue = general.DynamicValue(bool)
 
 # still dynamic
-ERROR_CODE_HANDLERS: list = []
+ERROR_CODE_HANDLERS: list[int] = []
 SSL_CERT_FILE: str = None
 SSL_KEY_FILE: str = None
 SSL_KEY_PASSWORD: str = None
 
 # - basic server code
+print(f'{SERVER_NAME} (version: {VERSION})')
+
 # load config
 
 print(f'Loading {FC.LIGHT_GREEN}config.yml{OPS.RESET}')
@@ -98,7 +101,7 @@ if config.get('server.secret-key') is None:
 SERVER: str = SERVER.check_type(config.get('server.base-server'))
 
 # app init
-
+print(f'running on: {FC.LIGHT_BLUE}quart{OPS.RESET}/{FC.LIGHT_YELLOW}{SERVER}{OPS.RESET}')
 app = Quart(__name__,
             static_folder=None, template_folder=None)
 app.config['SECRET_KEY'] = SECRET_KEY.check_type(config['server.secret-key'])
@@ -107,7 +110,7 @@ app.config['CORS_HEADERS'] = 'Content-Type'
 
 
 @app.before_request
-def check_scheme():
+async def check_scheme():
     if not request.is_secure and SSL_ENABLED:
         url = request.url.replace('http://', 'https://', 1)
         return redirect(url, code=301)
@@ -125,14 +128,14 @@ async def http_index(file: str = INDEX_FILE):
         if os.path.isdir(f) and os.path.exists(JOIN(f, INDEX_FILE)):
             # with open(JOIN(f, INDEX_FILE), 'r') as file:
             #     return LOADER.run('parse_pmgs_template', file=file.read()), 200
-            return await send_file(f), 200
+            return await send_file(f, cache_timeout=300), 200
         elif os.path.exists(f):
+            # if modified_client := request.headers.get('If-Modified-Since'):
+            #     client_time = datetime.strptime(modified_client, '%a, %d %b %Y %H:%M:%S %Z')
+            #     if client_time <= datetime.fromtimestamp(os.path.getmtime(f)):
+            #         return '', 304
             # Check if the file size is greater than 1MB
-            if modified_client := request.headers.get('If-Modified-Since'):
-                client_time = datetime.strptime(modified_client, '%a, %d %b %Y %H:%M:%S %Z')
-                if client_time <= datetime.fromtimestamp(os.path.getmtime(f)):
-                    return '', 304
-            elif os.path.getsize(f) > 1000000:
+            if os.path.getsize(f) > 1000000:
                 return await send_file(f, conditional=True), 206
             # retrn = LOADER.call_id('server.request._cgi', file, f, request)
             # if retrn is not None:
@@ -140,12 +143,12 @@ async def http_index(file: str = INDEX_FILE):
             # del retrn
             # with open(f, 'r') as file:
             #     return LOADER.run('parse_pmgs_template', file=file.read()), 200
-            return await send_file(f), 200
+            return await send_file(f, cache_timeout=300), 200
     abort(404)
 
 
 @app.after_request
-def server_after_request(response: Response):
+async def server_after_request(response: Response):
     general.log_request(raw_request=request, raw_response=response)
     response.headers['Server'] = SERVER_NAME
     return response
@@ -176,10 +179,11 @@ for handler_file in os.listdir(JOIN(ROOT_DIR, 'error-handlers')):
         return error_handler
 
 
-    print(f'Adding error handler for: {FC.DARK_CYAN}{error_code}{OPS.RESET}')
+    # print(f'Adding error handler for: {FC.DARK_CYAN}{error_code}{OPS.RESET}')
     ERROR_CODE_HANDLERS.append(error_code)
     app.errorhandler(error_code)(create_error_handler(redirect_to, return_value, return_code))
 
+print(f'Added error handlers for: {', '.join([f'{FC.DARK_CYAN}{x}{OPS.RESET}' for x in ERROR_CODE_HANDLERS])}')
 
 print('Loading plugins')
 LOADER.load_plugins()
@@ -211,7 +215,7 @@ for plugin in LOADER.plugins:
 
 LOADER.call_id('plugin.pre-load')
 
-all_endpoints = [endpoint for plugin in LOADER.plugins for endpoint in plugin.manager._endpoints]
+all_endpoints = [endpoint for plugin in LOADER.plugins for endpoint in plugin.manager.endpoints]
 longest_endpoint = len(max(all_endpoints, key=len)) if all_endpoints else 0
 
 for plugin in LOADER.plugins:
@@ -220,9 +224,9 @@ for plugin in LOADER.plugins:
 
     # hackery
     with contextlib.redirect_stdout(plugin.stdout_buffer):
-        plugin.manager._functions.get('plugin.loading.pre-endpoints', lambda: None)()
+        plugin.manager.functions.get('plugin.loading.pre-endpoints', lambda: None)()
 
-    for endpoint in plugin.manager._endpoints:
+    for endpoint in plugin.manager.endpoints:
         def create_plugin():
             plugin_id = 'f' + shake_128(plugin.configuration.id_.encode()).hexdigest(8)
             function_identifier = secrets.token_hex(4)
@@ -253,7 +257,7 @@ for plugin in LOADER.plugins:
                 '''), glbls, lcls)
             return lcls[name]
         new_function = create_plugin()
-        doc = plugin.manager._endpoints[endpoint]['func'].__doc__
+        doc = plugin.manager.endpoints[endpoint]['func'].__doc__
         doc = doc if doc is not None else 'No docs included'
         doc = doc.replace('\n', '\n         ')
         print(f'Adding endpoint       : {FC.DARK_YELLOW}{endpoint: <{longest_endpoint + 3}}{OPS.RESET} | '
@@ -262,13 +266,13 @@ for plugin in LOADER.plugins:
 
     # again
     with contextlib.redirect_stdout(plugin.stdout_buffer):
-        plugin.manager._functions.get('plugin.loading.post-endpoints', lambda: None)()
+        plugin.manager.functions.get('plugin.loading.post-endpoints', lambda: None)()
 
     # and again
     with contextlib.redirect_stdout(plugin.stdout_buffer):
-        plugin.manager._functions.get('plugin.loading.pre-sockets', lambda: None)()
+        plugin.manager.functions.get('plugin.loading.pre-sockets', lambda: None)()
 
-    for endpoint in plugin.manager._sockets:
+    for endpoint in plugin.manager.sockets:
         def create_plugin():
             plugin_id = 'f' + shake_128(plugin.configuration.id_.encode()).hexdigest(8)
             function_identifier = secrets.token_hex(4)
@@ -298,7 +302,7 @@ for plugin in LOADER.plugins:
 
 
         new_function = create_plugin()
-        doc = plugin.manager._sockets[endpoint].__doc__
+        doc = plugin.manager.sockets[endpoint].__doc__
         doc = doc if doc is not None else 'No docs included'
         doc = doc.replace('\n', '\n         ')
         print(f'Adding socket endpoint: {FC.DARK_YELLOW}{endpoint: <{longest_endpoint + 3}}{OPS.RESET} | '
@@ -307,7 +311,7 @@ for plugin in LOADER.plugins:
 
     # just do it
     with contextlib.redirect_stdout(plugin.stdout_buffer):
-        plugin.manager._functions.get('plugin.loading.post-sockets', lambda: None)()
+        plugin.manager.functions.get('plugin.loading.post-sockets', lambda: None)()
 
 
 LOADER.call_id('plugin.loaded')
@@ -326,7 +330,7 @@ if __name__ == '__main__':
     else:
         print(f'{FC.LIGHT_RED}Public IP is not reachable{OPS.RESET}')
 
-    print('Starting WebServer, use CTRL+C to exit')
+    print('Starting Webserver, use CTRL+C to exit')
     print(f'Connect to the server using this links:\n'
           f'  {FC.LIGHT_BLUE}Local Machine{OPS.RESET}: {protocol}://127.0.0.1{link_port}/\n'
           f'  {FC.LIGHT_BLUE}Local Network{OPS.RESET}: {protocol}://{nat_addr}{link_port}/')

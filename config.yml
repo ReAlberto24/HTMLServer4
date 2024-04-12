@@ -8,11 +8,8 @@ server:
   # if the port is 80 and ssl is enabled,
   # it will automatically be changed to 443
   port: 80
-
   index-file: 'index.html'
-
   secret-key: null
-
   html-directory: '$(ROOT)/html'
 
   ssl:
@@ -20,3 +17,4 @@ server:
     cert: '$(ROOT)/ssl/cert.pem'
     key: '$(ROOT)/ssl/key.pem'
     key-password: 'HTMLServer4'
+

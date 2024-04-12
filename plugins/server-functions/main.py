@@ -1,6 +1,5 @@
 import os
 import sys
-import time
 
 sys.path.append(os.path.dirname(__file__))
 
@@ -9,8 +8,6 @@ from plugin_manager import Manager
 # Gets Nat and Public addresses
 import socket
 import http.client
-import requests
-import subprocess
 
 # CGI and Custom templates
 from quart import Response, make_response, Request, Quart, request, redirect
@@ -20,7 +17,7 @@ import subprocess
 import io
 from functools import lru_cache
 import platform
-from multiprocessing import Process
+
 
 BASE_PHP_PATH = os.path.join(os.path.dirname(__file__), 'php')
 PHP_EXECUTABLE = os.path.join(BASE_PHP_PATH, 'php-cgi.exe')
