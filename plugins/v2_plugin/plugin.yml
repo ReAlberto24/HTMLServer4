@@ -1,0 +1,10 @@
+plugin:
+  name: 'Test'                         # type: str
+  version: 1.0                         # type: float
+  main-file: 'main.py'                 # type: str
+  id: 'html_server4.v2_plugin_loader'  # type: str
+  inject-manager: false                # type: bool
+
+loader:
+  required-version: 2.0                # type: float
+  preferred-version: 2.0               # type: float
