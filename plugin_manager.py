@@ -73,13 +73,12 @@ class ExclusiveReturn(WrapperException):
 
 
 class Manager:
-    SERVER_INFORMATION: general.ServerInformation = general.ServerInformation({})
-
     def __init__(self):
         self._functions = {}
         self._endpoints = {}
         self._sockets = {}
         self._exposed = {}
+        self.SERVER_INFORMATION: general.ServerInformation = general.ServerInformation({})
 
     # @staticmethod
     # def sync_wrapper(func):
@@ -117,17 +116,18 @@ class Manager:
             return func
         return decorator
 
-    def route(self, endpoint: str, ):
-              # enable_cross_origin: bool = False,
-              # enable_lru_cache: bool = False):
+    def route(self,
+              endpoint: str,
+              enable_cross_origin: bool = False,
+              enable_lru_cache: bool = False):
         def decorator(func):
             if endpoint in self._endpoints:
                 raise SyntaxError(f'Endpoint "{endpoint}" is already linked to a function '
                                   f'({self._endpoints[endpoint].__name__})')
             self._endpoints[endpoint] = {
                 'func': func,
-                'cross-origin': False,  # enable_cross_origin,
-                'lru-cache': False,  # enable_lru_cache
+                'cross-origin': enable_cross_origin,
+                'lru-cache': enable_lru_cache
             }
 
             return func

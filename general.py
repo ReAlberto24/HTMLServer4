@@ -3,7 +3,11 @@ from collections.abc import MutableMapping
 import os
 from pathlib import Path
 from colors import *
-from quart import Request, Response, Websocket
+from quart import Request, request, Response, Websocket, websocket, abort
+from hashlib import shake_128
+import secrets
+from plugin_loader.v1 import Plugin
+from async_lru import alru_cache
 
 
 # https://www.freecodecamp.org/news/how-to-flatten-a-dictionary-in-python-in-4-different-ways/
@@ -114,3 +118,49 @@ class WSWrapper(Websocket):
 
     async def broadcast(self) -> None:
         pass
+
+
+def create_endpoint_function(plugin: Plugin, endpoint, loader, error_handlers):
+    plugin_id = 'f' + shake_128(plugin.configuration.id_.encode()).hexdigest(8)
+    function_identifier = secrets.token_hex(4)
+    function_name = f'{plugin_id}_c{function_identifier}'
+
+    async def endpoint_function(*args, **kwargs):
+        retrn = loader.call_id('server.request', request)
+        if retrn is not None:
+            return retrn
+        try:
+            data, return_code = await plugin.manager.call_endpoint(
+                endpoint=endpoint, *args, **kwargs, request=request
+            )
+        except (ValueError, TypeError):
+            raise ValueError(f'Endpoint "{endpoint}" in {plugin.configuration.id_} does not return 2 values')
+        if return_code in error_handlers:
+            abort(return_code)
+        return data, return_code
+
+
+    if plugin.manager.endpoints[endpoint]['lru-cache']:
+        endpoint_function = alru_cache()(endpoint_function)
+
+
+    endpoint_function.__name__ = function_name
+    return endpoint_function
+
+
+def create_socket_function(plugin, endpoint):
+    plugin_id = 'f' + shake_128(plugin.configuration.id_.encode()).hexdigest(8)
+    function_identifier = secrets.token_hex(4)
+    function_name = f'{plugin_id}_s{function_identifier}'
+
+    async def socket_function(*args, **kwargs):
+        # await LOADER.call_id('server.socket', websocket)
+        log_request(method='SOCKET',
+                    endpoint=websocket.full_path if len(websocket.args) > 0 else websocket.path,
+                    return_code=None,
+                    custom_color=FC.DARK_GREEN)
+        await plugin.manager.socket(endpoint=endpoint, *args, **kwargs, ws=websocket)
+
+
+    socket_function.__name__ = function_name
+    return socket_function

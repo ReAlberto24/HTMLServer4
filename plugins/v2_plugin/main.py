@@ -9,7 +9,7 @@ def on_load():
     print('Plugin Loaded!')
 
 
-@manager.route('/x')
+@manager.route('/x', enable_lru_cache=True)
 async def x(request: Request) -> tuple[str, int]:
     return 'X', 200
 

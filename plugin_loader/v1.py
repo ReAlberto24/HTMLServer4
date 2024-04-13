@@ -2,7 +2,7 @@ import os
 from dataclasses import dataclass
 from types import ModuleType
 from typing import Any
-from general import flatten_dict
+import general
 from yaml import safe_load
 import io
 import sys
@@ -11,6 +11,7 @@ import contextlib
 from colors import FC, OPS
 from plugin_manager import Manager, ManagerError
 from enum import Enum
+from quart import Quart
 
 
 def check_requirements_from_dict(data: dict) -> bool:
@@ -20,9 +21,9 @@ def check_requirements_from_dict(data: dict) -> bool:
     #     if not (key in required_attrs):
     #         return False
     for required_attr in required_attrs:
-        if not (required_attr in flatten_dict(data).keys()):
+        if not (required_attr in general.flatten_dict(data).keys()):
             return False
-    flatten_data = flatten_dict(data)
+    flatten_data = general.flatten_dict(data)
     for attr in required_attrs:
         if flatten_data.get(attr) is None:
             return False
@@ -40,7 +41,7 @@ class PluginConfiguration:
 
     def from_dict(self, data: dict):
         # if check_requirements_from_dict(data=data):
-        flatten_data = flatten_dict(data)
+        flatten_data = general.flatten_dict(data)
         self.name = flatten_data.get('plugin.name')
         self.version = flatten_data.get('plugin.version')
         self.main_file = flatten_data.get('plugin.main-file')
@@ -134,6 +135,8 @@ class Loader:
         self.plugin_loaded = LoaderState.base
         self.roe = raise_on_error
         self.exposed = {}
+        self.longest_endpoint = 0
+        self.longest_id = 0
 
     def load_plugins(self):
         for plugin in os.listdir(self.directory):
@@ -205,6 +208,13 @@ class Loader:
                         f'Function "{name}" is already present, enable override ({plugin.configuration.name})')
                 self.exposed[name] = func
 
+        all_endpoints = [endpoint for plugin in self.plugins for endpoint in
+                         (list(plugin.manager.endpoints.keys()) + list(plugin.manager.sockets.keys()))]
+        self.longest_endpoint = len(max(all_endpoints, key=len)) if all_endpoints else 0
+
+        all_ids = [plugin.configuration.id_ for plugin in self.plugins]
+        self.longest_id = len(max(all_ids, key=len)) if all_ids else 0
+
     def call_id(self, id_, *args, **kwargs):
         if self.plugin_loaded < LoaderState.loaded_managers:
             if self.roe:
@@ -235,3 +245,41 @@ class Loader:
             return
         return self.exposed[function](*args, **kwargs)
 
+    def print_events(self):
+        for plugin in self.plugins:
+            print(f'{FC.LIGHT_MAGENTA}{plugin.configuration.id_}{OPS.RESET} events: ' +
+                  ', '.join([f'{FC.DARK_YELLOW}{i}{OPS.RESET}' for i in plugin.manager.functions.keys()]))
+
+    def load_endpoints(self, app: Quart, methods: list[str], error_handlers: list[int]) -> None:
+        for plugin in self.plugins:
+            with contextlib.redirect_stdout(plugin.stdout_buffer):
+                plugin.manager.functions.get('plugin.loading.pre-endpoints', lambda: None)()
+
+            for endpoint in plugin.manager.endpoints:
+                new_function = general.create_endpoint_function(plugin, endpoint, self, error_handlers)
+                doc = plugin.manager.endpoints[endpoint]['func'].__doc__ or 'No docs included'
+                doc = doc.replace('\n', '\n         ')
+                print(f'Adding endpoint       : {FC.DARK_YELLOW}{endpoint: <{self.longest_endpoint + 3}}{OPS.RESET} | '
+                      f'{plugin.configuration.id_: <{self.longest_id + 3}} | {new_function.__name__}\n'
+                      f' - lru cache enabled: {str(plugin.manager.endpoints[endpoint]['lru-cache']).lower()}\n'
+                      f' - docs: {doc}')
+                app.route(endpoint, methods=methods)(new_function)
+
+            with contextlib.redirect_stdout(plugin.stdout_buffer):
+                plugin.manager.functions.get('plugin.loading.post-endpoints', lambda: None)()
+
+    def load_sockets(self, app: Quart) -> None:
+        for plugin in self.plugins:
+            with contextlib.redirect_stdout(plugin.stdout_buffer):
+                plugin.manager.functions.get('plugin.loading.pre-sockets', lambda: None)()
+
+            for socket in plugin.manager.sockets:
+                new_function = general.create_socket_function(plugin, socket)
+                doc = plugin.manager.sockets[socket].__doc__ or 'No docs included'
+                doc = doc.replace('\n', '\n         ')
+                print(f'Adding endpoint       : {FC.DARK_YELLOW}{socket: <{self.longest_endpoint + 3}}{OPS.RESET} | '
+                      f'{plugin.configuration.id_: <{self.longest_id + 3}} | {new_function.__name__}\n - docs: {doc}')
+                app.websocket(socket)(new_function)
+
+            with contextlib.redirect_stdout(plugin.stdout_buffer):
+                plugin.manager.functions.get('plugin.loading.post-sockets', lambda: None)()
