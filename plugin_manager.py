@@ -74,11 +74,13 @@ class ExclusiveReturn(WrapperException):
 
 class Manager:
     def __init__(self):
+        from plugin_loader.v1 import Loader
         self._functions = {}
         self._endpoints = {}
         self._sockets = {}
         self._exposed = {}
         self.SERVER_INFORMATION: general.ServerInformation = general.ServerInformation({})
+        self.loader: Loader = None
 
     # @staticmethod
     # def sync_wrapper(func):

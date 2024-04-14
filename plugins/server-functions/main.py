@@ -15,16 +15,24 @@ import http.client
 # import io
 # import platform
 
-from quart import Response, make_response, Request, Quart, request, redirect
+from quart import Response, make_response, Request, Quart, request, redirect, send_file, abort
 import subprocess
 from functools import lru_cache
+
+from async_lru import alru_cache
+import general
+from datetime import datetime
 
 
 BASE_PHP_PATH = os.path.join(os.path.dirname(__file__), 'php')
 PHP_EXECUTABLE = os.path.join(BASE_PHP_PATH, 'php-cgi.exe')
 PYTHON_EXECUTABLE = sys.executable
+JOIN = os.path.join
 manager = Manager()
 upgrade_proc = None
+
+CACHE_ENABLED = True
+CACHE_TIMEOUT = 300
 
 
 @manager.on('server.start')
@@ -222,3 +230,47 @@ def check_public_ip(ip: str, port: int) -> bool:
                              stderr=subprocess.STDOUT,
                              stdin=subprocess.DEVNULL)
     return process.returncode == 0
+
+
+@manager.expose
+async def check_scheme():
+    if not request.is_secure and manager.SERVER_INFORMATION.SSL_ENABLED:
+        url = request.url.replace('http://', 'https://', 1)
+        return redirect(url, code=301)
+
+
+@manager.expose
+async def http_index(file: str):
+    retrn = manager.loader.call_id('server.request', request)
+    if retrn is not None:
+        return retrn
+    del retrn
+    f = general.resolve_directory_path(JOIN(manager.SERVER_INFORMATION.HTML_DIRECTORY, *file.split('/')))
+    if general.is_in_directory(manager.SERVER_INFORMATION.HTML_DIRECTORY, f):
+        if os.path.isdir(f) and os.path.exists(JOIN(f, manager.SERVER_INFORMATION.INDEX_FILE)):
+            # with open(JOIN(f, INDEX_FILE), 'r') as file:
+            #     return LOADER.run('parse_pmgs_template', file=file.read()), 200
+            return await send_file(f, cache_timeout=CACHE_TIMEOUT), 200
+        elif os.path.exists(f):
+            if (modified_client := request.headers.get('If-Modified-Since')) and CACHE_ENABLED:
+                client_time = datetime.strptime(modified_client, '%a, %d %b %Y %H:%M:%S %Z')
+                if client_time <= datetime.fromtimestamp(os.path.getmtime(f)):
+                    return '', 304
+            # Check if the file size is greater than 1MB
+            if os.path.getsize(f) > 1000000:
+                return await send_file(f, conditional=True), 206
+            # retrn = LOADER.call_id('server.request._cgi', file, f, request)
+            # if retrn is not None:
+            #     return retrn
+            # del retrn
+            # with open(f, 'r') as file:
+            #     return LOADER.run('parse_pmgs_template', file=file.read()), 200
+            return await send_file(f, cache_timeout=CACHE_TIMEOUT), 200
+    abort(404)
+
+
+@manager.expose
+async def server_after_request(response: Response):
+    general.log_request(raw_request=request, raw_response=response)
+    response.headers['Server'] = manager.SERVER_INFORMATION.SERVER_NAME
+    return response

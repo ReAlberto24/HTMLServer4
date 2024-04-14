@@ -92,7 +92,7 @@ if SSL_ENABLED:
         exit(1)
     SSL_KEY_PASSWORD: str = general.DynamicValue(str).check_type(config.get('server.ssl.key-password'))
     if PORT == 80:
-        PORT = 443
+        PORT: int = 443
 
 if config.get('server.secret-key') is None:
     config['server.secret-key'] = secrets.token_hex(16)
@@ -108,51 +108,42 @@ app.config['SECRET_KEY'] = SECRET_KEY.check_type(config['server.secret-key'])
 # CORS implementation
 app.config['CORS_HEADERS'] = 'Content-Type'
 
+print('Loading plugins')
+plugin_loader.load_plugins()
+plugin_loader.init_plugins()
+plugin_loader.load_managers()
 
-@app.before_request
-async def check_scheme():
-    if not request.is_secure and SSL_ENABLED:
-        url = request.url.replace('http://', 'https://', 1)
-        return redirect(url, code=301)
+#  please don't use this call
+plugin_loader.call_id('plugin._attr')
 
+for plugin in plugin_loader.plugins:
+    plugin.manager.SERVER_INFORMATION = general.ServerInformation({
+        'ROOT_DIR': ROOT_DIR,
+        'CWD': CWD,
+        'JOIN': JOIN,
+        'METHODS': METHODS,
+        'SERVER_NAME': SERVER_NAME,
+        'LOADER': plugin_loader,
+        'PORT': PORT,
+        'HTML_DIRECTORY': HTML_DIRECTORY,
+        'SECRET_KEY': SECRET_KEY,
+        'INDEX_FILE': INDEX_FILE,
+        'SERVER': SERVER,
+        'SSL_ENABLED': SSL_ENABLED,
+        'ERROR_CODE_HANDLERS': ERROR_CODE_HANDLERS,
+        'SSL_CERT_FILE': SSL_CERT_FILE,
+        'SSL_KEY_FILE': SSL_KEY_FILE,
+        'SSL_KEY_PASSWORD': SSL_KEY_PASSWORD,
+    })
+    plugin.manager.loader = plugin_loader
 
-@app.route('/', methods=METHODS)
-@app.route('/<path:file>', methods=METHODS)
-async def http_index(file: str = INDEX_FILE):
-    retrn = plugin_loader.call_id('server.request', request)
-    if retrn is not None:
-        return retrn
-    del retrn
-    f = general.resolve_directory_path(JOIN(HTML_DIRECTORY, *file.split('/')))
-    if general.is_in_directory(HTML_DIRECTORY, f):
-        if os.path.isdir(f) and os.path.exists(JOIN(f, INDEX_FILE)):
-            # with open(JOIN(f, INDEX_FILE), 'r') as file:
-            #     return LOADER.run('parse_pmgs_template', file=file.read()), 200
-            return await send_file(f, cache_timeout=300), 200
-        elif os.path.exists(f):
-            # if modified_client := request.headers.get('If-Modified-Since'):
-            #     client_time = datetime.strptime(modified_client, '%a, %d %b %Y %H:%M:%S %Z')
-            #     if client_time <= datetime.fromtimestamp(os.path.getmtime(f)):
-            #         return '', 304
-            # Check if the file size is greater than 1MB
-            if os.path.getsize(f) > 1000000:
-                return await send_file(f, conditional=True), 206
-            # retrn = LOADER.call_id('server.request._cgi', file, f, request)
-            # if retrn is not None:
-            #     return retrn
-            # del retrn
-            # with open(f, 'r') as file:
-            #     return LOADER.run('parse_pmgs_template', file=file.read()), 200
-            return await send_file(f, cache_timeout=300), 200
-    abort(404)
-
-
-@app.after_request
-async def server_after_request(response: Response):
-    general.log_request(raw_request=request, raw_response=response)
-    response.headers['Server'] = SERVER_NAME
-    return response
-
+app.before_request(plugin_loader.get_exposed('check_scheme'))
+app.route('/', methods=METHODS, defaults={'file': INDEX_FILE})(
+    app.route('/<path:file>', methods=METHODS)(
+        plugin_loader.get_exposed('http_index')
+    )
+)
+app.after_request(plugin_loader.get_exposed('server_after_request'))
 
 print('Loading Error Handlers')
 for handler_file in os.listdir(JOIN(ROOT_DIR, 'error-handlers')):
@@ -184,34 +175,6 @@ for handler_file in os.listdir(JOIN(ROOT_DIR, 'error-handlers')):
     app.errorhandler(error_code)(create_error_handler(redirect_to, return_value, return_code))
 
 print(f'Added error handlers for: {', '.join([f'{FC.DARK_CYAN}{x}{OPS.RESET}' for x in ERROR_CODE_HANDLERS])}')
-
-print('Loading plugins')
-plugin_loader.load_plugins()
-plugin_loader.init_plugins()
-plugin_loader.load_managers()
-
-#  please don't use this call
-plugin_loader.call_id('plugin._attr')
-
-for plugin in plugin_loader.plugins:
-    plugin.manager.SERVER_INFORMATION = general.ServerInformation({
-        'ROOT_DIR': ROOT_DIR,
-        'CWD': CWD,
-        'JOIN': JOIN,
-        'METHODS': METHODS,
-        'SERVER_NAME': SERVER_NAME,
-        'LOADER': plugin_loader,
-        'PORT': PORT,
-        'HTML_DIRECTORY': HTML_DIRECTORY,
-        'SECRET_KEY': SECRET_KEY,
-        'INDEX_FILE': INDEX_FILE,
-        'SERVER': SERVER,
-        'SSL_ENABLED': SSL_ENABLED,
-        'ERROR_CODE_HANDLERS': ERROR_CODE_HANDLERS,
-        'SSL_CERT_FILE': SSL_CERT_FILE,
-        'SSL_KEY_FILE': SSL_KEY_FILE,
-        'SSL_KEY_PASSWORD': SSL_KEY_PASSWORD,
-    })
 
 plugin_loader.call_id('plugin.pre-load')
 

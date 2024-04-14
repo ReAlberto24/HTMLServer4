@@ -232,7 +232,20 @@ class Loader:
                 #     pass
                 continue
 
-    def run(self, function, *args, **kwargs) -> (str, int):
+    def get_exposed(self, function: str):
+        if self.plugin_loaded < LoaderState.loaded_managers:
+            if self.roe:
+                raise PluginError('Loader', f'Use .init_plugins() before')
+            print(str(PluginError('Loader', f'Use .init_plugins() before')))
+            return
+        if function not in self.exposed:
+            if self.roe:
+                raise PluginError('FunctionNotFound', f'The specified function "{function}" could not be found')
+            print(str(PluginError('FunctionNotFound', f'The specified function "{function}" could not be found')))
+            return
+        return self.exposed[function]
+
+    def run(self, function: str, *args, **kwargs) -> tuple[str, int] | None:
         if self.plugin_loaded < LoaderState.loaded_managers:
             if self.roe:
                 raise PluginError('Loader', f'Use .init_plugins() before')
